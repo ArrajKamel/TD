@@ -1,0 +1,239 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+/*
+ * ========================================
+ * AST (Abstract Syntax Tree) Builder
+ * for Regular Expressions
+ * ========================================
+ *
+ * This program parses regular expressions and builds a tree.
+ *
+ * Grammar:
+ *   E → T '|' E | T        (Expression: handles OR)
+ *   T → FT | F             (Term: handles concatenation)
+ *   F → P* | P             (Factor: handles star)
+ *   P → (E) | letter       (Primary: handles parentheses and letters)
+ *
+ * Example: (a|bb)*ba
+ * Creates tree:
+ *        &
+ *       / \
+ *      *   &
+ *      |  / \
+ *     / \ b  a
+ *    a   &
+ *       / \
+ *      b   b
+ */
+
+// ========== Node Types ==========
+
+typedef enum {
+    CHAR,      // A single letter like 'a' or 'b'
+    OR,        // The '|' operator
+    CONCAT,    // Concatenation (shown as '&' in the tree)
+    STAR       // The '*' operator
+} NodeType;
+
+// ========== Tree Node Structure ==========
+
+typedef struct Node {
+    NodeType type;          // What kind of node is this?
+    char value;             // The character (only for CHAR nodes)
+    struct Node *left;      // Left child
+    struct Node *right;     // Right child
+} Node;
+
+// ========== Global Variables ==========
+
+char *input;    // The string we're parsing
+int pos = 0;    // Where we are in the string
+
+// ========== Helper Functions ==========
+
+/*
+ * Look at the current character without moving forward
+ */
+char peek() {
+    return input[pos];
+}
+
+/*
+ * Get the current character and move to the next position
+ */
+char advance() {
+    return input[pos++];
+}
+
+/*
+ * Create a new tree node
+ */
+Node* createNode(NodeType type, char value, Node *left, Node *right) {
+    Node *node = (Node*)malloc(sizeof(Node));
+    node->type = type;
+    node->value = value;
+    node->left = left;
+    node->right = right;
+    return node;
+}
+
+// ========== Parser Functions (One per Grammar Rule) ==========
+
+/*
+ * E → T '|' E | T
+ * Handles: a|b (alternation/OR)
+ */
+Node* parseE() {
+    Node *left = parseT();  // Get left side
+
+    if (peek() == '|') {
+        advance();  // Skip the '|'
+        Node *right = parseE();  // Get right side
+        return createNode(OR, '|', left, right);
+    }
+
+    return left;  // No '|' found, just return left
+}
+
+/*
+ * T → FT | F
+ * Handles: ab (concatenation)
+ */
+Node* parseT() {
+    Node *left = parseF();  // Get first part
+
+    // Is there more to concatenate?
+    char c = peek();
+    if (c != '\0' && c != ')' && c != '|') {
+        Node *right = parseT();  // Get the rest
+        return createNode(CONCAT, '&', left, right);
+    }
+
+    return left;  // Nothing to concatenate
+}
+
+/*
+ * F → P* | P
+ * Handles: a* (star operator)
+ */
+Node* parseF() {
+    Node *node = parseP();  // Get the base
+
+    if (peek() == '*') {
+        advance();  // Skip the '*'
+        return createNode(STAR, '*', node, NULL);
+    }
+
+    return node;  // No star
+}
+
+/*
+ * P → (E) | l
+ * Handles: (expr) or a single letter
+ */
+Node* parseP() {
+    char c = peek();
+
+    if (c == '(') {
+        // Parse expression inside parentheses
+        advance();  // Skip '('
+        Node *node = parseE();
+        if (peek() == ')') {
+            advance();  // Skip ')'
+        } else {
+            printf("Error: Missing ')'\n");
+        }
+        return node;
+    }
+    else if (isalpha(c)) {
+        // Single letter
+        advance();
+        return createNode(CHAR, c, NULL, NULL);
+    }
+    else {
+        printf("Error: Unexpected '%c'\n", c);
+        return NULL;
+    }
+}
+
+// ========== Display and Cleanup ==========
+
+/*
+ * Print the tree (indented to show structure)
+ */
+void printTree(Node *node, int depth) {
+    if (node == NULL) return;
+
+    // Print indentation
+    for (int i = 0; i < depth; i++) {
+        printf("  ");
+    }
+
+    // Print the node
+    switch (node->type) {
+        case CHAR:
+            printf("%c\n", node->value);
+            break;
+        case OR:
+            printf("|\n");
+            printTree(node->left, depth + 1);
+            printTree(node->right, depth + 1);
+            break;
+        case CONCAT:
+            printf("&\n");
+            printTree(node->left, depth + 1);
+            printTree(node->right, depth + 1);
+            break;
+        case STAR:
+            printf("*\n");
+            printTree(node->left, depth + 1);
+            break;
+    }
+}
+
+/*
+ * Free all memory used by the tree
+ */
+void freeTree(Node *node) {
+    if (node == NULL) return;
+    freeTree(node->left);
+    freeTree(node->right);
+    free(node);
+}
+
+// ========== Main Program ==========
+
+int main() {
+    char buffer[256];
+
+    printf("Enter a regular expression: ");
+
+    // Read input from user
+    if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+        return 1;
+    }
+
+    // Remove the newline at the end
+    buffer[strcspn(buffer, "\n")] = 0;
+
+    // Set up for parsing
+    input = buffer;
+    pos = 0;
+
+    printf("\nParsing: %s\n\n", input);
+
+    // Parse and build the tree
+    Node *tree = parseE();
+
+    // Display the result
+    if (tree != NULL) {
+        printf("Abstract Syntax Tree:\n");
+        printTree(tree, 0);
+        freeTree(tree);
+    }
+
+    return 0;
+}
