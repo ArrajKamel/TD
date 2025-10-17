@@ -1,8 +1,0 @@
-{
-    "files.associations": {
-        "*.dbclient-js": "javascript",
-        "*.xdc": "cabal",
-        "*.pro": "prolog",
-        "draft": "c"
-    }
-}
